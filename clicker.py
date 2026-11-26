@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-HandyClickerBot task automation (Telethon).
+Telegram task automation (Telethon).
 
   python clicker.py             -> one pass over all 3 sections, then exit (GitHub Actions)
   python clicker.py --loop      -> repeat every 30 min (VPS / Oracle server)
   python clicker.py --inspect   -> do NOT click tasks; send the real bot layout to Saved Messages
 
 Env: API_ID, API_HASH, SESSION_STRING (required)
-     TARGET_BOT (default HandyClickerBot), MAX_TASKS (25), LOOP_MINUTES (30), SUMMARY (0/1)
+     TARGET_BOT (required), MAX_TASKS (25), LOOP_MINUTES (30), SUMMARY (0/1)
 Public repo note: Actions logs are PUBLIC, so this script never prints links/usernames.
 """
 import argparse, asyncio, os, random, re, time, traceback
@@ -18,7 +18,7 @@ from telethon.sessions import StringSession
 API_ID = int(os.environ["API_ID"])
 API_HASH = os.environ["API_HASH"]
 SESSION = os.environ["SESSION_STRING"]
-BOT = os.getenv("TARGET_BOT", "HandyClickerBot")
+BOT = os.environ["TARGET_BOT"]
 MAX_TASKS = int(os.getenv("MAX_TASKS", "25"))
 LOOP_MIN = int(os.getenv("LOOP_MINUTES", "30"))
 SUMMARY = os.getenv("SUMMARY", "0") == "1"
@@ -60,7 +60,7 @@ async def wait_change(c, before, timeout=20, pred=None):
 
 async def notify(c, text):
     try:
-        await c.send_message("me", ("⚠️ HandyClicker: " + text)[:3900])
+        await c.send_message("me", ("⚠️ Runner: " + text)[:3900])
     except Exception as e:  # noqa
         log(f"could not write to Saved Messages: {e}")
 
@@ -243,7 +243,7 @@ async def one_pass(c):
             totals[key] = "error"
     log(f"done: {totals}")
     if SUMMARY:
-        await c.send_message("me", f"✅ HandyClicker pass: {totals}")
+        await c.send_message("me", f"✅ runner pass: {totals}")
 
 
 async def inspect(c):
