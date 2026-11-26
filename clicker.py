@@ -43,15 +43,45 @@ def url_button(m):
 def find_btn(m, pattern):
     return next((b for b in flat(m) if not b.url and re.search(pattern, b.text or "", re.I)), None)
 
+CHECK_TXT = re.compile(r"click on\s*[✔✅]", re.I)
+HANDLED = set()
+STATE = {"checks": 0}
+
+def is_check(m):
+    """Verification message: has a ✔ button and (the 'Click on ✔' text or a ✖ button)."""
+    btns = flat(m)
+    has_ok = any("✔" in (b.text or "") and not b.url for b in btns)
+    has_no = any("✖" in (b.text or "") for b in btns)
+    return has_ok and (bool(CHECK_TXT.search(m.raw_text or "")) or has_no)
+
+async def press_check(m):
+    for b in flat(m):
+        if "✔" in (b.text or "") and not b.url:
+            try:
+                await b.click()
+                STATE["checks"] += 1
+                log("verification check passed")
+                return True
+            except Exception as e:
+                log(f"check click error {type(e).__name__}")
+    return False
+
 async def snap(c):
     return {m.id: (m.raw_text or "") for m in await c.get_messages(BOT, limit=6)}
 
 async def wait_change(c, before, timeout=20, pred=None):
-    """Wait for a NEW bot message or an EDITED one (text changed)."""
+    """Wait for a NEW or EDITED bot message; auto-press the ✔️ check when it appears."""
     end = time.time() + timeout
     while time.time() < end:
         for m in sorted(await c.get_messages(BOT, limit=6), key=lambda x: x.id):
             if m.out:
+                continue
+            if is_check(m):
+                if m.id not in HANDLED:
+                    HANDLED.add(m.id)
+                    if await press_check(m):
+                        end = max(end, time.time() + 20)
+                        await asyncio.sleep(2)
                 continue
             if before.get(m.id) != (m.raw_text or "") and (pred is None or pred(m)):
                 return m
@@ -208,15 +238,25 @@ SECTIONS = [("Visit Links", do_link), ("Message Bots", do_bot), ("Join Chats", d
 async def run_section(c, key, handler):
     ok = fails = 0
     for _ in range(MAX_TASKS):
+      
         label = await find_label(c, key)
         before = await snap(c)
+        checks_before = STATE["checks"]
         await c.send_message(BOT, label)
         m = await wait_change(c, before, 20)
         if m is None:
+            if STATE["checks"] > checks_before:
+                continue  # a ✔️ check was solved, ask the section again
             log(f"{key}: no answer from bot"); break
         if NO_ADS.search(m.raw_text or ""):
             log(f"{key}: no tasks"); break
-        res = await handler(c, m)
+                try:
+            res = await handler(c, m)
+        except (errors.FloodWaitError, errors.ChannelsTooMuchError):
+            raise
+        except Exception as e:
+            log(f"{key}: task error {type(e).__name__}")
+            res = "fail"
         if res == "ok":
             ok += 1; fails = 0
         else:
